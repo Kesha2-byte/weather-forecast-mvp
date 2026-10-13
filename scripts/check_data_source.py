@@ -1,18 +1,3 @@
-"""
-Проверка источника данных Open-Meteo.
-
-Запуск:
-    python check_data_source.py
-
-Отвечает на вопросы:
-  - какое доступно временное разрешение
-  - как глубоко уходит архив
-  - какие поля отдаются и как называются
-  - какая задержка у архива
-
-Ключ API не требуется.
-"""
-
 import json
 from datetime import date, timedelta
 from urllib.parse import urlencode
