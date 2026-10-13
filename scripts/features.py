@@ -1,5 +1,6 @@
 import os
 import warnings
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ DAYS_IN_YEAR = 365.25
 LOCAL_TZ = "Asia/Almaty"
 
 
+@lru_cache(maxsize=None)
 def load_series(city_id):
     sql = """
         SELECT observed_at, temperature_c
@@ -63,7 +65,7 @@ def add_baseline(df, horizon):
 
 
 def build_dataset(city_id, horizon, lags=DEFAULT_LAGS):
-    df = load_series(city_id)
+    df = load_series(city_id).copy()
     df = add_lag_features(df, lags)
     df = add_cyclical_features(df)
     df = add_target(df, horizon)
