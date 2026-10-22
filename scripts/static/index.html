@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прогноз погоды</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --surface: #fcfcfb;
+    --page: #f9f9f7;
+    --ink: #0b0b0b;
+    --ink-secondary: #52514e;
+    --ink-muted: #898781;
+    --border: #e1e0d9;
+    --accent: #2a78d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+  .lead { color: var(--ink-secondary); margin: 0 0 28px; }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  select, button {
+    font: inherit;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .status { color: var(--ink-muted); font-size: 14px; }
+  h2 { font-size: 17px; font-weight: 500; margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 500; color: var(--ink-secondary); font-size: 13px; }
+  td { font-variant-numeric: tabular-nums; }
+  .empty { color: var(--ink-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Система краткосрочного прогнозирования погоды</h1>
+  <p class="lead">История наблюдений, прогноз температуры и точность модели</p>
+
+  <div class="panel">
+    <div class="controls">
+      <select id="city"></select>
+      <button id="build">Построить прогноз</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Температура: факт и прогноз</h2>
+    <canvas id="chart" height="110"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>Точность модели по горизонтам</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Горизонт</th>
+          <th>Сопоставлено</th>
+          <th>MAE, °C</th>
+          <th>RMSE, °C</th>
+        </tr>
+      </thead>
+      <tbody id="metrics"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = "/api/v1";
+const citySelect = document.getElementById("city");
+const statusEl = document.getElementById("status");
+const buildBtn = document.getElementById("build");
+let chart = null;
+
+function setStatus(text) { statusEl.textContent = text; }
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:00`;
+}
+
+async function get(path) {
+  const response = await fetch(API + path);
+  if (!response.ok) throw new Error((await response.json()).detail || response.statusText);
+  return response.json();
+}
+
+async function post(path) {
+  const response = await fetch(API + path, { method: "POST" });
+  if (!response.ok) throw new Error((await response.json()).detail || response.statusText);
+  return response.json();
+}
+
+async function loadCities() {
+  const cities = await get("/cities");
+  citySelect.innerHTML = cities
+    .map(c => `<option value="${c.city_id}">${c.name}</option>`)
+    .join("");
+}
+
+function drawChart(history, forecast) {
+  const labels = history.map(o => formatTime(o.observed_at))
+    .concat(forecast.map(f => formatTime(f.target_time)));
+
+  const actual = history.map(o => o.temperature_c)
+    .concat(forecast.map(() => null));
+
+  const predicted = history.map(() => null);
+  predicted[predicted.length - 1] = history[history.length - 1].temperature_c;
+  forecast.forEach(f => predicted.push(f.predicted_temperature_c));
+
+  if (chart) chart.destroy();
+
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Факт",
+          data: actual,
+          borderColor: "#0b0b0b",
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.25,
+        },
+        {
+          label: "Прогноз",
+          data: predicted,
+          borderColor: "#2a78d6",
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          tension: 0.25,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: "#52514e", boxHeight: 2 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} °C` } },
+      },
+      scales: {
+        x: { ticks: { color: "#898781", maxTicksLimit: 12 }, grid: { color: "#e1e0d9" } },
+        y: {
+          ticks: { color: "#898781", callback: v => v + " °C" },
+          grid: { color: "#e1e0d9" },
+        },
+      },
+    },
+  });
+}
+
+async function loadMetrics(cityId) {
+  const tbody = document.getElementById("metrics");
+  const rows = await get(`/metrics/by-horizon?city_id=${cityId}`);
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">Нет сопоставленных прогнозов. Выполните backfill_forecasts.py</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .filter(r => [1, 6, 12, 24, 48].includes(r.horizon_hours))
+    .map(r => `<tr>
+        <td>${r.horizon_hours} ч</td>
+        <td>${r.matched_pairs}</td>
+        <td>${r.mae}</td>
+        <td>${r.rmse}</td>
+      </tr>`)
+    .join("");
+}
+
+async function refresh() {
+  const cityId = citySelect.value;
+  setStatus("загрузка...");
+
+  try {
+    let forecast;
+    try {
+      forecast = await get(`/cities/${cityId}/forecasts`);
+    } catch {
+      setStatus("прогноз ещё не построен");
+      forecast = null;
+    }
+
+    if (forecast) {
+      const end = new Date(forecast.created_at);
+      const start = new Date(end.getTime() - 72 * 3600 * 1000);
+      const history = await get(
+        `/cities/${cityId}/observations?from=${start.toISOString()}&to=${end.toISOString()}`
+      );
+      drawChart(history.observations, forecast.forecasts);
+      setStatus(`прогноз от ${formatTime(forecast.created_at)}`);
+    }
+
+    await loadMetrics(cityId);
+  } catch (error) {
+    setStatus("ошибка: " + error.message);
+  }
+}
+
+buildBtn.addEventListener("click", async () => {
+  buildBtn.disabled = true;
+  setStatus("построение прогноза, первый запуск занимает до минуты...");
+  try {
+    const result = await post(`/cities/${citySelect.value}/forecasts`);
+    setStatus(`сохранено записей: ${result.stored}`);
+    await refresh();
+  } catch (error) {
+    setStatus("ошибка: " + error.message);
+  } finally {
+    buildBtn.disabled = false;
+  }
+});
+
+citySelect.addEventListener("change", refresh);
+
+loadCities().then(refresh);
+</script>
+</body>
+</html>
