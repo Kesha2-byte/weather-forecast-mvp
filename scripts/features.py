@@ -64,6 +64,23 @@ def add_baseline(df, horizon):
     return df
 
 
+def feature_names_for(lags=DEFAULT_LAGS):
+    return [f"lag_{lag}" for lag in lags] + [
+        "hour_sin", "hour_cos", "doy_sin", "doy_cos"
+    ]
+
+
+def build_features(city_id, lags=DEFAULT_LAGS):
+    df = load_series(city_id).copy()
+    df = add_lag_features(df, lags)
+    df = add_cyclical_features(df)
+
+    names = feature_names_for(lags)
+    columns = ["observed_at", "temperature_c"] + names
+
+    return df[columns].dropna().reset_index(drop=True), names
+
+
 def build_dataset(city_id, horizon, lags=DEFAULT_LAGS):
     df = load_series(city_id).copy()
     df = add_lag_features(df, lags)
@@ -71,13 +88,11 @@ def build_dataset(city_id, horizon, lags=DEFAULT_LAGS):
     df = add_target(df, horizon)
     df = add_baseline(df, horizon)
 
-    feature_names = [f"lag_{lag}" for lag in lags] + [
-        "hour_sin", "hour_cos", "doy_sin", "doy_cos"
-    ]
-    columns = ["observed_at", "temperature_c"] + feature_names + ["baseline", "target"]
+    names = feature_names_for(lags)
+    columns = ["observed_at", "temperature_c"] + names + ["baseline", "target"]
 
     dataset = df[columns].dropna().reset_index(drop=True)
-    return dataset, feature_names
+    return dataset, names
 
 
 def chronological_split(dataset, test_size=0.2, gap_hours=HOURS_IN_DAY):
@@ -92,18 +107,16 @@ if __name__ == "__main__":
     HORIZON = 24
 
     for city_id, city_name in [(1, "Алматы"), (2, "Астана")]:
-        dataset, feature_names = build_dataset(city_id, HORIZON)
+        dataset, names = build_dataset(city_id, HORIZON)
         train, test = chronological_split(dataset)
+        features, _ = build_features(city_id)
 
         print(f"\n{city_name}")
-        print(f"  Строк после очистки: {len(dataset)}")
-        print(f"  Признаки:            {', '.join(feature_names)}")
+        print(f"  Строк для обучения:  {len(dataset)}")
+        print(f"  Строк для прогноза:  {len(features)}")
+        print(f"  Последняя точка:     {features['observed_at'].max()}")
         print(f"  Обучающая выборка:   {len(train)}")
         print(f"  Тестовая выборка:    {len(test)}")
 
         assert train["observed_at"].max() < test["observed_at"].min(), \
             "Выборки пересекаются по времени"
-
-    print("\nПример первых строк:")
-    dataset, _ = build_dataset(1, HORIZON)
-    print(dataset.head().to_string(index=False))

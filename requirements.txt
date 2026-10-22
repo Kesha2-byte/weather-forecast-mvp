@@ -1,7 +1,14 @@
+annotated-doc==0.0.5
+annotated-types==0.7.0
+anyio==4.12.1
+click==8.1.8
 contourpy==1.3.0
 cycler==0.12.1
 exceptiongroup==1.3.1
+fastapi==0.128.8
 fonttools==4.60.2
+h11==0.16.0
+idna==3.20
 importlib_resources==6.5.2
 iniconfig==2.1.0
 joblib==1.5.3
@@ -13,6 +20,8 @@ pandas==2.3.3
 pillow==11.3.0
 pluggy==1.6.0
 psycopg2-binary==2.9.12
+pydantic==2.13.5
+pydantic_core==2.46.5
 Pygments==2.21.0
 pyparsing==3.3.3
 pytest==8.4.2
@@ -21,8 +30,11 @@ pytz==2026.5
 scikit-learn==1.6.1
 scipy==1.13.1
 six==1.17.0
+starlette==0.49.3
 threadpoolctl==3.7.0
 tomli==2.5.0
+typing-inspection==0.4.2
 typing_extensions==4.16.0
 tzdata==2026.5
+uvicorn==0.39.0
 zipp==3.23.1
