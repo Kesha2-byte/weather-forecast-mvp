@@ -61,6 +61,7 @@
   <div class="panel">
     <div class="controls">
       <select id="city"></select>
+      <select id="model"></select>
       <button id="build">Построить прогноз</button>
       <span class="status" id="status"></span>
     </div>
@@ -72,7 +73,7 @@
   </div>
 
   <div class="panel">
-    <h2>Точность модели по горизонтам</h2>
+    <h2>Точность выбранной модели по горизонтам</h2>
     <table>
       <thead>
         <tr>
@@ -90,6 +91,7 @@
 <script>
 const API = "/api/v1";
 const citySelect = document.getElementById("city");
+const modelSelect = document.getElementById("model");
 const statusEl = document.getElementById("status");
 const buildBtn = document.getElementById("build");
 let chart = null;
@@ -112,6 +114,14 @@ async function post(path) {
   const response = await fetch(API + path, { method: "POST" });
   if (!response.ok) throw new Error((await response.json()).detail || response.statusText);
   return response.json();
+}
+
+async function loadModels() {
+  const models = await get("/models");
+  modelSelect.innerHTML = models
+    .map(m => `<option value="${m.name}">${m.title}</option>`)
+    .join("");
+  modelSelect.value = "linear_regression";
 }
 
 async function loadCities() {
@@ -178,7 +188,7 @@ function drawChart(history, forecast) {
 
 async function loadMetrics(cityId) {
   const tbody = document.getElementById("metrics");
-  const rows = await get(`/metrics/by-horizon?city_id=${cityId}`);
+  const rows = await get(`/metrics/by-horizon?city_id=${cityId}&model=${modelSelect.value}`);
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="4" class="empty">Нет сопоставленных прогнозов. Выполните backfill_forecasts.py</td></tr>`;
@@ -198,14 +208,15 @@ async function loadMetrics(cityId) {
 
 async function refresh() {
   const cityId = citySelect.value;
+  const model = modelSelect.value;
   setStatus("загрузка...");
 
   try {
     let forecast;
     try {
-      forecast = await get(`/cities/${cityId}/forecasts`);
+      forecast = await get(`/cities/${cityId}/forecasts?model=${model}`);
     } catch {
-      setStatus("прогноз ещё не построен");
+      setStatus("прогноз этой моделью ещё не построен");
       forecast = null;
     }
 
@@ -229,7 +240,8 @@ buildBtn.addEventListener("click", async () => {
   buildBtn.disabled = true;
   setStatus("построение прогноза, первый запуск занимает до минуты...");
   try {
-    const result = await post(`/cities/${citySelect.value}/forecasts`);
+    const result = await post(
+      `/cities/${citySelect.value}/forecasts?model=${modelSelect.value}`);
     setStatus(`сохранено записей: ${result.stored}`);
     await refresh();
   } catch (error) {
@@ -240,8 +252,9 @@ buildBtn.addEventListener("click", async () => {
 });
 
 citySelect.addEventListener("change", refresh);
+modelSelect.addEventListener("change", refresh);
 
-loadCities().then(refresh);
+Promise.all([loadCities(), loadModels()]).then(refresh);
 </script>
 </body>
 </html>
