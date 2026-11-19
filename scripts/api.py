@@ -5,7 +5,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from forecast_service import MAX_HORIZON, MODEL_NAME, MODEL_VERSION, connect, run_and_store
+from forecast_service import (
+    MAX_HORIZON,
+    MODEL_NAME,
+    MODELS,
+    MODEL_TITLES,
+    MODEL_VERSION,
+    connect,
+    run_and_store,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -20,10 +28,27 @@ def fetch_all(sql, params=()):
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
+def ensure_model(model):
+    if model not in MODELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown model {model}. Available: {', '.join(MODELS)}",
+        )
+    return MODELS[model]
+
+
 def ensure_city(city_id):
     rows = fetch_all("SELECT city_id FROM cities WHERE city_id = %s", (city_id,))
     if not rows:
         raise HTTPException(status_code=404, detail=f"City {city_id} not found")
+
+
+@app.get("/api/v1/models")
+def list_models():
+    return [
+        {"name": name, "version": version, "title": MODEL_TITLES.get(name, name)}
+        for name, version in MODELS.items()
+    ]
 
 
 @app.get("/api/v1/cities")
@@ -56,17 +81,20 @@ def list_observations(
 
 
 @app.post("/api/v1/cities/{city_id}/forecasts", status_code=201)
-def create_forecast(city_id: int, max_horizon_hours: int = MAX_HORIZON):
+def create_forecast(city_id: int, max_horizon_hours: int = MAX_HORIZON,
+                    model: str = MODEL_NAME):
     ensure_city(city_id)
+    version = ensure_model(model)
     if not 1 <= max_horizon_hours <= MAX_HORIZON:
         raise HTTPException(status_code=422, detail="Horizon must be between 1 and 48")
 
-    created_at, predictions, stored = run_and_store(city_id, max_horizon=max_horizon_hours)
+    created_at, predictions, stored = run_and_store(
+        city_id, max_horizon=max_horizon_hours, model=model)
 
     return {
         "city_id": city_id,
-        "model": MODEL_NAME,
-        "version": MODEL_VERSION,
+        "model": model,
+        "version": version,
         "created_at": created_at,
         "stored": stored,
         "forecasts": predictions,
@@ -74,22 +102,33 @@ def create_forecast(city_id: int, max_horizon_hours: int = MAX_HORIZON):
 
 
 @app.get("/api/v1/cities/{city_id}/forecasts")
-def get_forecast(city_id: int):
+def get_forecast(city_id: int, model: str = MODEL_NAME):
     ensure_city(city_id)
+    version = ensure_model(model)
 
     rows = fetch_all("""
         SELECT f.created_at, f.target_time, f.horizon_hours, f.predicted_temperature_c
         FROM forecasts f
-        WHERE f.city_id = %s
-          AND f.created_at = (SELECT MAX(created_at) FROM forecasts WHERE city_id = %s)
+        JOIN models m ON m.model_id = f.model_id
+        WHERE f.city_id = %s AND m.name = %s AND m.version = %s
+          AND f.created_at = (
+              SELECT MAX(f2.created_at)
+              FROM forecasts f2
+              JOIN models m2 ON m2.model_id = f2.model_id
+              WHERE f2.city_id = %s AND m2.name = %s AND m2.version = %s
+          )
         ORDER BY f.horizon_hours
-    """, (city_id, city_id))
+    """, (city_id, model, version, city_id, model, version))
 
     if not rows:
-        raise HTTPException(status_code=404, detail="No forecasts stored for this city")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No forecasts stored for this city and model {model}")
 
     return {
         "city_id": city_id,
+        "model": model,
+        "version": version,
         "created_at": rows[0]["created_at"],
         "forecasts": rows,
     }
@@ -129,8 +168,9 @@ def get_metrics(city_id: int = None, horizon_hours: int = None):
 
 
 @app.get("/api/v1/metrics/by-horizon")
-def get_metrics_by_horizon(city_id: int):
+def get_metrics_by_horizon(city_id: int, model: str = MODEL_NAME):
     ensure_city(city_id)
+    version = ensure_model(model)
 
     return fetch_all("""
         SELECT f.horizon_hours,
@@ -140,10 +180,11 @@ def get_metrics_by_horizon(city_id: int):
         FROM forecasts f
         JOIN observations o
           ON o.city_id = f.city_id AND o.observed_at = f.target_time
-        WHERE f.city_id = %s
+        JOIN models m ON m.model_id = f.model_id
+        WHERE f.city_id = %s AND m.name = %s AND m.version = %s
         GROUP BY f.horizon_hours
         ORDER BY f.horizon_hours
-    """, (city_id,))
+    """, (city_id, model, version))
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

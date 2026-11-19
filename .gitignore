@@ -219,3 +219,7 @@ __marimo__/
 .venv/
 .claude/
 .pytest_cache/
+
+# Backups from one-off migration scripts
+*.bak
+*.bak2
