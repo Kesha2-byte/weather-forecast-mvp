@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
-from features import build_dataset, chronological_split
+from features import build_dataset, chronological_split, lags_for
 
 np.seterr(all="ignore")
 
@@ -35,7 +35,7 @@ def evaluate_regression(train, test, feature_names):
 
 def run(city_id, horizon):
     dataset, feature_names = build_dataset(city_id, horizon)
-    train, test = chronological_split(dataset)
+    train, test = chronological_split(dataset, horizon=horizon)
 
     base_mae, base_rmse = evaluate_baseline(test)
     reg_mae, reg_rmse, model = evaluate_regression(train, test, feature_names)
@@ -52,6 +52,7 @@ def run(city_id, horizon):
         "rmse_ratio": reg_rmse / base_rmse,
         "coefficients": dict(zip(feature_names, model.coef_)),
         "intercept": float(model.intercept_),
+        "lags": lags_for(horizon),
     }
 
 

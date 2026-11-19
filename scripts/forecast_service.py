@@ -7,14 +7,14 @@ import psycopg2
 from psycopg2.extras import execute_values
 from sklearn.linear_model import LinearRegression
 
-from features import build_dataset, build_features
+from features import all_lags_up_to, build_dataset, build_features, feature_names_for, lags_for
 
 np.seterr(all="ignore")
 
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://localhost/weather")
 MAX_HORIZON = 48
 MODEL_NAME = "linear_regression"
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"
 
 _models = {}
 
@@ -25,7 +25,7 @@ def connect():
 
 @lru_cache(maxsize=None)
 def get_features(city_id):
-    return build_features(city_id)
+    return build_features(city_id, all_lags_up_to(MAX_HORIZON))
 
 
 def get_model(city_id, horizon):
@@ -61,11 +61,12 @@ def build_forecast(city_id, as_of=None, max_horizon=MAX_HORIZON):
         row = eligible.iloc[-1]
 
     created_at = row["observed_at"]
-    inputs = row[names].to_numpy().reshape(1, -1)
 
     predictions = []
     for horizon in range(1, max_horizon + 1):
         model = get_model(city_id, horizon)
+        wanted = feature_names_for(lags_for(horizon))
+        inputs = row[wanted].to_numpy(dtype=float).reshape(1, -1)
         value = float(model.predict(inputs)[0])
         predictions.append({
             "horizon_hours": horizon,

@@ -140,10 +140,11 @@ def get_metrics_by_horizon(city_id: int):
         FROM forecasts f
         JOIN observations o
           ON o.city_id = f.city_id AND o.observed_at = f.target_time
-        WHERE f.city_id = %s
+        JOIN models m ON m.model_id = f.model_id
+        WHERE f.city_id = %s AND m.name = %s AND m.version = %s
         GROUP BY f.horizon_hours
         ORDER BY f.horizon_hours
-    """, (city_id,))
+    """, (city_id, MODEL_NAME, MODEL_VERSION))
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
