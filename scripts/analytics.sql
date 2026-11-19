@@ -17,7 +17,7 @@ SELECT
     ROUND(AVG(o.temperature_c) OVER w::numeric, 2) AS ma_24h,
     ROUND((o.temperature_c - AVG(o.temperature_c) OVER w)::numeric, 2) AS deviation
 FROM observations o
-JOIN cities c ON c.id = o.city_id
+JOIN cities c ON c.city_id = o.city_id
 WINDOW w AS (
     PARTITION BY o.city_id
     ORDER BY o.observed_at
@@ -46,7 +46,7 @@ ranked AS (
 )
 SELECT c.name AS city, r.day, ROUND(r.amplitude::numeric, 1) AS amplitude, r.place
 FROM ranked r
-JOIN cities c ON c.id = r.city_id
+JOIN cities c ON c.city_id = r.city_id
 WHERE r.place <= 5
 ORDER BY c.name, r.place;
 
@@ -80,7 +80,7 @@ SELECT
         PARTITION BY m.city_id ORDER BY m.month
         ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)::numeric, 2) AS ma_3m
 FROM monthly m
-JOIN cities c ON c.id = m.city_id
+JOIN cities c ON c.city_id = m.city_id
 ORDER BY c.name, m.month;
 
 
@@ -91,14 +91,14 @@ SELECT
     c.name AS city,
     f.horizon_hours,
     COUNT(*) AS matched,
-    ROUND(AVG(ABS(f.temperature_c - o.temperature_c))::numeric, 3) AS mae,
-    ROUND(SQRT(AVG(POWER(f.temperature_c - o.temperature_c, 2)))::numeric, 3) AS rmse,
-    ROUND(AVG(f.temperature_c - o.temperature_c)::numeric, 3) AS bias
+    ROUND(AVG(ABS(f.predicted_temperature_c - o.temperature_c))::numeric, 3) AS mae,
+    ROUND(SQRT(AVG(POWER(f.predicted_temperature_c - o.temperature_c, 2)))::numeric, 3) AS rmse,
+    ROUND(AVG(f.predicted_temperature_c - o.temperature_c)::numeric, 3) AS bias
 FROM forecasts f
 JOIN observations o
   ON o.city_id = f.city_id
  AND o.observed_at = f.target_time
-JOIN cities c ON c.id = f.city_id
+JOIN cities c ON c.city_id = f.city_id
 GROUP BY 1, 2
 ORDER BY 1, 2;
 
@@ -110,7 +110,7 @@ WITH errors AS (
     SELECT
         f.city_id,
         EXTRACT(HOUR FROM f.target_time AT TIME ZONE 'Asia/Almaty')::int AS hour_of_day,
-        ABS(f.temperature_c - o.temperature_c) AS abs_error
+        ABS(f.predicted_temperature_c - o.temperature_c) AS abs_error
     FROM forecasts f
     JOIN observations o
       ON o.city_id = f.city_id
@@ -129,7 +129,7 @@ SELECT
     ROUND(p.mae::numeric, 3) AS mae,
     NTILE(4) OVER (PARTITION BY p.city_id ORDER BY p.mae) AS quartile
 FROM per_hour p
-JOIN cities c ON c.id = p.city_id
+JOIN cities c ON c.city_id = p.city_id
 ORDER BY c.name, p.hour_of_day;
 
 
@@ -139,7 +139,7 @@ WITH errors AS (
     SELECT
         f.city_id,
         f.target_time,
-        f.temperature_c - o.temperature_c AS error
+        f.predicted_temperature_c - o.temperature_c AS error
     FROM forecasts f
     JOIN observations o
       ON o.city_id = f.city_id
@@ -158,7 +158,7 @@ SELECT
     COUNT(*) AS pairs,
     ROUND(CORR(error, prev_error)::numeric, 3) AS autocorrelation
 FROM paired p
-JOIN cities c ON c.id = p.city_id
+JOIN cities c ON c.city_id = p.city_id
 WHERE prev_error IS NOT NULL
 GROUP BY 1
 ORDER BY 1;
@@ -191,7 +191,7 @@ SELECT
     COUNT(*) AS hours,
     ROUND((MAX(g.temperature_c) - MIN(g.temperature_c))::numeric, 1) AS total_rise
 FROM grouped g
-JOIN cities c ON c.id = g.city_id
+JOIN cities c ON c.city_id = g.city_id
 WHERE g.rising
 GROUP BY c.name, g.streak_id
 ORDER BY hours DESC
@@ -209,6 +209,6 @@ SELECT
     ROUND(MAX(o.temperature_c)::numeric, 1) AS max_t,
     ROUND((100.0 * COUNT(*) FILTER (WHERE o.temperature_c < 0) / COUNT(*))::numeric, 1) AS below_zero_pct
 FROM observations o
-JOIN cities c ON c.id = o.city_id
+JOIN cities c ON c.city_id = o.city_id
 GROUP BY 1, 2
 ORDER BY 1, 2;
